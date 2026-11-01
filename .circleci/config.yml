@@ -1,0 +1,59 @@
+version: 2.1
+
+# DJANGO_SECRET_KEY and VITE_API_URL can be set in the CircleCI project
+# settings (Environment Variables) or in a context; defaults are used otherwise.
+
+jobs:
+  backend:
+    docker:
+      - image: cimg/python:3.12
+    working_directory: ~/project/backend
+    steps:
+      - checkout:
+          path: ~/project
+      - restore_cache:
+          keys:
+            - pip-v1-{{ checksum "requirements.txt" }}
+      - run:
+          name: Install dependencies (pip)
+          command: pip install -r requirements.txt
+      - save_cache:
+          key: pip-v1-{{ checksum "requirements.txt" }}
+          paths:
+            - ~/.cache/pip
+      - run:
+          name: Run Django tests
+          command: |
+            export DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY:-ci-only-secret-key}"
+            python manage.py test
+      - setup_remote_docker
+      - run:
+          name: Build backend Docker image
+          command: docker build -t workflowhub-backend:${CIRCLE_SHA1} .
+      - run:
+          name: Show built image
+          command: docker images workflowhub-backend
+
+  frontend:
+    docker:
+      - image: cimg/base:stable
+    working_directory: ~/project/frontend
+    steps:
+      - checkout:
+          path: ~/project
+      - setup_remote_docker
+      - run:
+          name: Build frontend Docker image
+          command: |
+            docker build \
+              --build-arg VITE_API_URL="${VITE_API_URL:-http://localhost:8000/api}" \
+              -t workflowhub-frontend:${CIRCLE_SHA1} .
+      - run:
+          name: Show built image
+          command: docker images workflowhub-frontend
+
+workflows:
+  build:
+    jobs:
+      - backend
+      - frontend
